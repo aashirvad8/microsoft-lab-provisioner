@@ -18,37 +18,43 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: Az-104-Lab  # adjust this if your Terraform files are in a different folder
+        working-directory: Az-104-Lab
 
     env:
-      LOCATION: eastus           # your default location
-      CONTAINER_NAME: tfstate    # must match backend.tf container_name
+      LOCATION: eastus
+      CONTAINER_NAME: tfstate
 
     steps:
-      # 1. Checkout repo
+      # 1️⃣ Checkout repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Azure login using Service Principal stored in GitHub Secrets
+      # 2️⃣ Setup Terraform CLI
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.6  # specify version, or remove to get latest
+
+      # 3️⃣ Azure Login using Service Principal
       - name: Azure Login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # 3. Terraform Init (uses backend.tf for backend config)
+      # 4️⃣ Terraform Init
       - name: Terraform Init
         run: terraform init -input=false
 
-      # 4. Terraform Plan
+      # 5️⃣ Terraform Plan
       - name: Terraform Plan
         run: terraform plan -out=tfplan
 
-      # 5. Terraform Apply (only if action is 'apply')
+      # 6️⃣ Terraform Apply if 'apply' selected
       - name: Terraform Apply
-        if: github.event.inputs.action == 'apply'
+        if: ${{ github.event.inputs.action == 'apply' }}
         run: terraform apply -input=false -auto-approve tfplan
 
-      # 6. Terraform Destroy (only if action is 'destroy')
+      # 7️⃣ Terraform Destroy if 'destroy' selected
       - name: Terraform Destroy
-        if: github.event.inputs.action == 'destroy'
+        if: ${{ github.event.inputs.action == 'destroy' }}
         run: terraform destroy -auto-approve
