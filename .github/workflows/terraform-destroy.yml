@@ -1,73 +1,55 @@
 name: Terraform Destroy
 
 on:
-  workflow_dispatch:  # 👈 Manual trigger from GitHub Actions UI
-
-# 🧱 Prevents deploy & destroy from running at the same time
-concurrency:
-  group: terraform-shared
-  cancel-in-progress: false
+  workflow_dispatch:
 
 jobs:
   destroy:
     runs-on: ubuntu-latest
 
     steps:
-    # Step 1: Checkout code
     - name: Checkout
       uses: actions/checkout@v4
 
-    # Step 2: Azure login using Service Principal
     - name: Azure Login
       uses: azure/login@v2
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    # Step 3: Setup Terraform
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: 1.9.5
 
-    # Step 4: Initialize Terraform backend
     - name: Terraform Init
       env:
         ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
         ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
         ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
         ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-      run: terraform init -input=false
+      run: terraform init
 
-    # Step 5: Auto cleanup Terraform lock (stale lock removal)
-    - name: Cleanup Terraform lock (if any)
+    - name: Force unlock Terraform state (if locked)
+      env:
+        ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
+        ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
+        ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
+        ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
       continue-on-error: true
       run: |
-        echo "🔐 Checking for existing Terraform lock..."
-        LOCK_ID=$(terraform state lock-info 2>/dev/null | grep "ID:" | awk '{print $2}')
+        echo "Checking for terraform lock..."
+        LOCK_ID=$(terraform force-unlock -list | grep 'tfstate/terraform.tfstate' | awk '{print $1}' || true)
         if [ -n "$LOCK_ID" ]; then
-          echo "⚠️ Found lock ID: $LOCK_ID — unlocking..."
-          terraform force-unlock -force "$LOCK_ID" || true
+          echo "Found lock ID: $LOCK_ID. Unlocking..."
+          terraform force-unlock -force "$LOCK_ID"
         else
-          echo "✅ No active lock found."
+          echo "No lock found."
         fi
 
-    # Step 6: Terraform Destroy
     - name: Terraform Destroy
       env:
         ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
         ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
         ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
         ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-      run: terraform destroy -auto-approve -input=false
-
-    # Step 7: Fallback Destroy (if lock persists)
-    - name: Fallback Destroy (if lock persists)
-      if: failure()
-      env:
-        ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
-        ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
-        ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
-        ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-      run: |
-        echo "⚠️ Lock may still exist, retrying Terraform destroy without locking..."
-        terraform destroy -auto-approve -lock=false -input=false
+      run: terraform destroy -auto-approve -input=false || terraform destroy -auto-approve -input=false -lock=false
