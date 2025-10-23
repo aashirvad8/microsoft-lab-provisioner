@@ -7,6 +7,10 @@ on:
         description: "Type DESTROY to confirm tearing down all resources"
         required: true
 
+concurrency:
+  group: terraform-destroy-main
+  cancel-in-progress: false
+
 jobs:
   destroy:
     if: github.event.inputs.confirm == 'DESTROY'
