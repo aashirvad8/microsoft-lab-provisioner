@@ -1,10 +1,9 @@
 name: Terraform Deploy
 
 on:
-  push:
-    branches:
-      - main
-
+  on:
+  workflow_dispatch:   # 👈 allows you to trigger it manually from the Actions tab
+  
 jobs:
   deploy:
     runs-on: ubuntu-latest
