@@ -48,18 +48,18 @@ jobs:
         az storage account create --name $STORAGE_ACCOUNT_NAME --resource-group $RG_NAME --location eastus --sku Standard_LRS
         az storage container create --name $CONTAINER_NAME --account-name $STORAGE_ACCOUNT_NAME
 
-    - name: Terraform Init
-      env:
-        ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
-        ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
-        ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
-        ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-      run: |
-        terraform init \
-          -backend-config="resource_group_name=${{ env.RG_NAME }}" \
-          -backend-config="storage_account_name=${{ env.STORAGE_ACCOUNT_NAME }}" \
-          -backend-config="container_name=${{ env.CONTAINER_NAME }}" \
-          -backend-config="key=terraform.tfstate"
+        - name: Terraform Init
+          env:
+            ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
+            ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
+            ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
+            ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+          run: |
+            terraform init \
+              -backend-config="resource_group_name=${{ env.RG_NAME }}" \
+              -backend-config="storage_account_name=${{ env.STORAGE_ACCOUNT_NAME }}" \
+              -backend-config="container_name=${{ env.CONTAINER_NAME }}" \
+              -backend-config="key=terraform.tfstate"
 
     - name: Terraform Plan or Apply/Destroy
       env:
