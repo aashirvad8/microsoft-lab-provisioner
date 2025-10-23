@@ -41,7 +41,7 @@ jobs:
           ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
         run: terraform plan -out=tfplan
 
-      - name: Terraform Apply
+      - name: Terraform Apply --force
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         env:
           ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
