@@ -1,16 +1,31 @@
 name: Terraform Destroy
 
 on:
-  workflow_dispatch:   # 👈 allows you to trigger it manually from the Actions tab
+  workflow_dispatch:   # 👈 manually trigger from Actions tab
 
 jobs:
   destroy:
     runs-on: ubuntu-latest
-    environment: production   # optional safety guard
 
     steps:
     - name: Checkout repo
       uses: actions/checkout@v4
+
+    - name: Download backend metadata
+      uses: actions/download-artifact@v4
+      with:
+        name: backend-info
+
+    - name: Read backend info
+      id: backend
+      run: |
+        RG_NAME=$(grep RG_NAME backend-info.txt | cut -d'=' -f2)
+        STORAGE_ACCOUNT_NAME=$(grep STORAGE_ACCOUNT_NAME backend-info.txt | cut -d'=' -f2)
+        CONTAINER_NAME=$(grep CONTAINER_NAME backend-info.txt | cut -d'=' -f2)
+
+        echo "RG_NAME=$RG_NAME" >> $GITHUB_ENV
+        echo "STORAGE_ACCOUNT_NAME=$STORAGE_ACCOUNT_NAME" >> $GITHUB_ENV
+        echo "CONTAINER_NAME=$CONTAINER_NAME" >> $GITHUB_ENV
 
     - name: Azure Login
       uses: azure/login@v2
@@ -22,13 +37,18 @@ jobs:
       with:
         terraform_version: 1.9.5
 
-    - name: Terraform Init
+    - name: Terraform Init (with backend)
       env:
         ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
         ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
         ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
         ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-      run: terraform init -input=false
+      run: |
+        terraform init \
+          -backend-config="resource_group_name=${{ env.RG_NAME }}" \
+          -backend-config="storage_account_name=${{ env.STORAGE_ACCOUNT_NAME }}" \
+          -backend-config="container_name=${{ env.CONTAINER_NAME }}" \
+          -backend-config="key=terraform.tfstate"
 
     - name: Terraform Destroy
       env:
@@ -37,3 +57,7 @@ jobs:
         ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
         ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
       run: terraform destroy -auto-approve -input=false
+
+    - name: Cleanup backend resources
+      if: always()
+      run: |

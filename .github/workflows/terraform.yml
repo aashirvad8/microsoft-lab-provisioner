@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout
+    - name: Checkout repo
       uses: actions/checkout@v4
 
     - name: Azure Login
@@ -18,18 +18,49 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Setup Terraform
+    - name: Set up Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: 1.9.5  # (or whatever version you need)
+        terraform_version: 1.9.5
 
+    # 🌟 Bootstrap backend resources
+    - name: Create backend resources
+      id: backend
+      run: |
+        # Generate unique names
+        RG_NAME="tfstate-rg-${{ github.run_id }}"
+        STORAGE_ACCOUNT_NAME="tfstate$(openssl rand -hex 5)"
+        CONTAINER_NAME="tfstate"
+
+        echo "Creating Resource Group: $RG_NAME"
+        az group create --name $RG_NAME --location eastus
+
+        echo "Creating Storage Account: $STORAGE_ACCOUNT_NAME"
+        az storage account create --name $STORAGE_ACCOUNT_NAME --resource-group $RG_NAME --sku Standard_LRS
+
+        ACCOUNT_KEY=$(az storage account keys list --resource-group $RG_NAME --account-name $STORAGE_ACCOUNT_NAME --query "[0].value" -o tsv)
+
+        echo "Creating Blob Container: $CONTAINER_NAME"
+        az storage container create --name $CONTAINER_NAME --account-name $STORAGE_ACCOUNT_NAME --account-key $ACCOUNT_KEY
+
+        # Export for later Terraform use
+        echo "RG_NAME=$RG_NAME" >> $GITHUB_ENV
+        echo "STORAGE_ACCOUNT_NAME=$STORAGE_ACCOUNT_NAME" >> $GITHUB_ENV
+        echo "CONTAINER_NAME=$CONTAINER_NAME" >> $GITHUB_ENV
+
+    # 🌟 Initialize Terraform backend dynamically
     - name: Terraform Init
       env:
         ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
         ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
         ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
         ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-      run: terraform init
+      run: |
+        terraform init \
+          -backend-config="resource_group_name=${{ env.RG_NAME }}" \
+          -backend-config="storage_account_name=${{ env.STORAGE_ACCOUNT_NAME }}" \
+          -backend-config="container_name=${{ env.CONTAINER_NAME }}" \
+          -backend-config="key=terraform.tfstate"
 
     - name: Terraform Plan
       env:
