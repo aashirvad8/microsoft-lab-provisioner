@@ -1,10 +1,11 @@
 name: Terraform Destroy
 
 on:
-  workflow_dispatch:  # 👈 Allows you to trigger this manually from GitHub Actions UI
+  workflow_dispatch:  # 👈 Manual trigger from GitHub Actions UI
 
+# 🧱 Prevents deploy & destroy from running at the same time
 concurrency:
-  group: terraform-destroy
+  group: terraform-shared
   cancel-in-progress: false
 
 jobs:
@@ -12,11 +13,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # Step 1: Checkout repository
+    # Step 1: Checkout code
     - name: Checkout
       uses: actions/checkout@v4
 
-    # Step 2: Azure login
+    # Step 2: Azure login using Service Principal
     - name: Azure Login
       uses: azure/login@v2
       with:
@@ -28,7 +29,7 @@ jobs:
       with:
         terraform_version: 1.9.5
 
-    # Step 4: Initialize Terraform
+    # Step 4: Initialize Terraform backend
     - name: Terraform Init
       env:
         ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
@@ -37,7 +38,7 @@ jobs:
         ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
       run: terraform init -input=false
 
-    # Step 5: Cleanup Terraform lock (if any)
+    # Step 5: Auto cleanup Terraform lock (stale lock removal)
     - name: Cleanup Terraform lock (if any)
       continue-on-error: true
       run: |
@@ -59,7 +60,7 @@ jobs:
         ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
       run: terraform destroy -auto-approve -input=false
 
-    # Step 7: Fallback Destroy (in case lock persists)
+    # Step 7: Fallback Destroy (if lock persists)
     - name: Fallback Destroy (if lock persists)
       if: failure()
       env:
