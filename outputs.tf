@@ -5,5 +5,10 @@ output "vm_public_ip" {
 
 output "resource_group" {
   description = "Resource Group Name"
-  value       = azurerm_resource_group.lab.name
+  value       = local.rg_name
+}
+
+output "resource_group_location" {
+  description = "Resource Group Location"
+  value       = local.rg_location
 }
