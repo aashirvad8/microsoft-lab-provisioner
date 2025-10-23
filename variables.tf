@@ -5,7 +5,12 @@ variable "location" {
 
 variable "resource_group_name" {
   description = "Resource group name"
-  default     = "azure-lab-rg"
+  default     = "azure-lab-rg-${random_integer.suffix.result}"
+}
+
+resource "random_integer" "suffix" {
+  min = 10000
+  max = 99999
 }
 
 variable "prefix" {

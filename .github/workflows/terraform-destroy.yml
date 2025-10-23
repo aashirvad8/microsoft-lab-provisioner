@@ -61,3 +61,5 @@ jobs:
     - name: Cleanup backend resources
       if: always()
       run: |
+        echo "Deleting backend resource group: ${{ env.RG_NAME }}"
+        az group delete --name ${{ env.RG_NAME }} --yes --no-wait
