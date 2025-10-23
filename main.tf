@@ -1,5 +1,11 @@
 # main.tf
 
+provider "azurerm" {
+  features {}
+  subscription_id = "d0866d00-eb92-4775-bfeb-d6fc94acd94e"
+}
+
+
 # Fetch existing RG if it exists
 data "azurerm_resource_group" "existing" {
   count = var.resource_group_exists ? 1 : 0
