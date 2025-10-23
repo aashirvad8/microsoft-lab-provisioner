@@ -20,12 +20,18 @@ jobs:
       LOCATION: "eastus"
       CONTAINER_NAME: "tfstate"
 
+      # ✅ These will be picked up by Terraform for SP auth
+      ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
+      ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
+      ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
+      ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+
     steps:
-    # 1️⃣ Checkout repository
+    # 1️⃣ Checkout
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # 2️⃣ Azure login
+    # 2️⃣ Login to Azure (sets CLI session for backend creation)
     - name: Azure Login
       uses: azure/login@v2
       with:
@@ -37,18 +43,14 @@ jobs:
       with:
         terraform_version: 1.9.5
 
-    # 4️⃣ Generate unique names for backend
-    - name: Generate unique backend names
-      id: backend
+    # 4️⃣ Create backend resources (CLI login is okay for this)
+    - name: Create Azure Storage for backend
       run: |
-        RG_NAME="tfstate-rg-${RANDOM}"
+        RG_NAME="tfstate-rg"
         STORAGE_NAME="tfstate$RANDOM"
         echo "RG_NAME=$RG_NAME" >> $GITHUB_ENV
         echo "STORAGE_NAME=$STORAGE_NAME" >> $GITHUB_ENV
 
-    # 5️⃣ Create backend storage resources in Azure
-    - name: Create Azure Storage for backend
-      run: |
         az group create --name $RG_NAME --location $LOCATION
         az storage account create \
           --name $STORAGE_NAME \
@@ -60,14 +62,9 @@ jobs:
           --name $CONTAINER_NAME \
           --account-name $STORAGE_NAME
 
-    # 6️⃣ Terraform Init (inside Az-104-Lab directory)
+    # 5️⃣ Terraform Init (Service Principal Auth)
     - name: Terraform Init
-      working-directory: ./
-      env:
-        ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
-        ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
-        ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
-        ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+      working-directory: ./Az-104-Lab
       run: |
         terraform init -reconfigure \
           -backend-config="resource_group_name=$RG_NAME" \
@@ -75,20 +72,20 @@ jobs:
           -backend-config="container_name=$CONTAINER_NAME" \
           -backend-config="key=terraform.tfstate"
 
-    # 7️⃣ Terraform Plan
+    # 6️⃣ Terraform Plan
     - name: Terraform Plan
       if: ${{ github.event.inputs.action == 'apply' }}
-      working-directory: ./
+      working-directory: ./Az-104-Lab
       run: terraform plan
 
-    # 8️⃣ Terraform Apply
+    # 7️⃣ Terraform Apply
     - name: Terraform Apply
       if: ${{ github.event.inputs.action == 'apply' }}
-      working-directory: ./
+      working-directory: ./Az-104-Lab
       run: terraform apply -auto-approve
 
-    # 9️⃣ Terraform Destroy
+    # 8️⃣ Terraform Destroy
     - name: Terraform Destroy
       if: ${{ github.event.inputs.action == 'destroy' }}
-      working-directory: ./
+      working-directory: ./Az-104-Lab
       run: terraform destroy -auto-approve
