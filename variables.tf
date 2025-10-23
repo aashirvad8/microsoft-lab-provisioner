@@ -58,3 +58,9 @@ variable "admin_password" {
   type        = string
   sensitive   = true
 }
+
+variable "resource_group_exists" {
+  description = "Set to true if the resource group already exists in Azure"
+  type        = bool
+  default     = false
+}
