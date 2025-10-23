@@ -30,35 +30,40 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Set backend names for apply or download for destroy
-      id: backend-names
+    - name: Generate Unique Resource Names
+      id: names
       run: |
-        if [ "${{ github.event.inputs.action }}" = "apply" ]; then
-          RG_NAME="${PREFIX}-tfstate-rg-$RANDOM"
-          STORAGE_ACCOUNT_NAME="${PREFIX}tfstate$RANDOM"
-          echo "RG_NAME=$RG_NAME" >> $GITHUB_ENV
-          echo "STORAGE_ACCOUNT_NAME=$STORAGE_ACCOUNT_NAME" >> $GITHUB_ENV
-        else
-          echo "Downloading backend info artifact..."
-          mkdir backend-info
-          echo "Downloading backend-info artifact"
-        fi
-
-    - name: Download backend info artifact (destroy only)
-      if: ${{ github.event.inputs.action == 'destroy' }}
-      uses: actions/download-artifact@v3
-      with:
-        name: backend-info
-
-    - name: Load backend info (destroy only)
-      if: ${{ github.event.inputs.action == 'destroy' }}
-      run: |
-        cat backend-info/backend-info.env
-        source backend-info/backend-info.env
+        RG_NAME="${{ env.PREFIX }}-tfstate-rg-${RANDOM}"
+        STORAGE_ACCOUNT_NAME="${{ env.PREFIX }}tfstate$RANDOM"
         echo "RG_NAME=$RG_NAME" >> $GITHUB_ENV
         echo "STORAGE_ACCOUNT_NAME=$STORAGE_ACCOUNT_NAME" >> $GITHUB_ENV
 
-    - name: Create Azure Storage Account for Terraform State (apply only)
+        # Save backend info for later steps or runs
+        echo "RG_NAME=$RG_NAME" > backend-info.env
+        echo "STORAGE_ACCOUNT_NAME=$STORAGE_ACCOUNT_NAME" >> backend-info.env
+
+    # Upload backend info artifact (to reuse in destroy job if needed)
+    - name: Upload backend info artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-info
+        path: backend-info.env
+
+    # Download backend info artifact if destroying
+    - name: Download backend info artifact
+      if: ${{ github.event.inputs.action == 'destroy' }}
+      uses: actions/download-artifact@v4
+      with:
+        name: backend-info
+
+    - name: Load backend info variables
+      run: |
+        source backend-info.env
+        echo "RG_NAME=$RG_NAME"
+        echo "STORAGE_ACCOUNT_NAME=$STORAGE_ACCOUNT_NAME"
+      shell: bash
+
+    - name: Create Azure Storage Account for Terraform State
       if: ${{ github.event.inputs.action == 'apply' }}
       run: |
         az group create --name $RG_NAME --location $LOCATION
@@ -71,19 +76,6 @@ jobs:
         az storage container create \
           --name $CONTAINER_NAME \
           --account-name $STORAGE_ACCOUNT_NAME
-
-    - name: Save backend info (apply only)
-      if: ${{ github.event.inputs.action == 'apply' }}
-      run: |
-        echo "RG_NAME=$RG_NAME" > backend-info.env
-        echo "STORAGE_ACCOUNT_NAME=$STORAGE_ACCOUNT_NAME" >> backend-info.env
-
-    - name: Upload backend info artifact (apply only)
-      if: ${{ github.event.inputs.action == 'apply' }}
-      uses: actions/upload-artifact@v3
-      with:
-        name: backend-info
-        path: backend-info.env
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
@@ -103,7 +95,7 @@ jobs:
           -backend-config="container_name=$CONTAINER_NAME" \
           -backend-config="key=terraform.tfstate"
 
-    - name: Terraform Plan (apply only)
+    - name: Terraform Plan
       if: ${{ github.event.inputs.action == 'apply' }}
       env:
         ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
@@ -112,7 +104,7 @@ jobs:
         ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
       run: terraform plan
 
-    - name: Terraform Apply (apply only)
+    - name: Terraform Apply
       if: ${{ github.event.inputs.action == 'apply' }}
       env:
         ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
@@ -121,7 +113,7 @@ jobs:
         ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
       run: terraform apply -auto-approve
 
-    - name: Terraform Destroy (destroy only)
+    - name: Terraform Destroy
       if: ${{ github.event.inputs.action == 'destroy' }}
       env:
         ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
