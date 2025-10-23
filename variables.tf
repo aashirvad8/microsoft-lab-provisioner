@@ -8,10 +8,7 @@ variable "resource_group_name" {
   default     = "azure-lab-rg-${random_integer.suffix.result}"
 }
 
-resource "random_integer" "suffix" {
-  min = 10000
-  max = 99999
-}
+
 
 variable "prefix" {
   description = "Prefix for naming resources"
