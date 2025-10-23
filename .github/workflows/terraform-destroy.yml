@@ -1,63 +1,133 @@
-name: Terraform Destroy
+name: Terraform Deploy & Destroy (Azure)
 
 on:
-  workflow_dispatch:   # 👈 manually trigger from Actions tab
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Choose Terraform action'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+          - apply
+          - destroy
 
 jobs:
-  destroy:
+  terraform:
     runs-on: ubuntu-latest
 
+    env:
+      # Set your Azure Resource Naming Prefix
+      PREFIX: "lab"
+      LOCATION: "eastus"
+      CONTAINER_NAME: "tfstate"
+
     steps:
-    - name: Checkout repo
+    # ------------------------------
+    # STEP 1: Checkout Repo
+    # ------------------------------
+    - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Download backend metadata
-      uses: actions/download-artifact@v4
-      with:
-        name: backend-info
-
-    - name: Read backend info
-      id: backend
-      run: |
-        RG_NAME=$(grep RG_NAME backend-info.txt | cut -d'=' -f2)
-        STORAGE_ACCOUNT_NAME=$(grep STORAGE_ACCOUNT_NAME backend-info.txt | cut -d'=' -f2)
-        CONTAINER_NAME=$(grep CONTAINER_NAME backend-info.txt | cut -d'=' -f2)
-
-        echo "RG_NAME=$RG_NAME" >> $GITHUB_ENV
-        echo "STORAGE_ACCOUNT_NAME=$STORAGE_ACCOUNT_NAME" >> $GITHUB_ENV
-        echo "CONTAINER_NAME=$CONTAINER_NAME" >> $GITHUB_ENV
-
+    # ------------------------------
+    # STEP 2: Azure Login
+    # ------------------------------
     - name: Azure Login
       uses: azure/login@v2
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+    # ------------------------------
+    # STEP 3: Generate Unique Backend Names
+    # ------------------------------
+    - name: Generate Unique Resource Names
+      id: names
+      run: |
+        RG_NAME="${{ env.PREFIX }}-tfstate-rg-${RANDOM}"
+        STORAGE_ACCOUNT_NAME="${{ env.PREFIX }}tfstate$RANDOM"
+        echo "RG_NAME=$RG_NAME" >> $GITHUB_ENV
+        echo "STORAGE_ACCOUNT_NAME=$STORAGE_ACCOUNT_NAME" >> $GITHUB_ENV
+
+    # ------------------------------
+    # STEP 4: Create Azure Backend Resources
+    # ------------------------------
+    - name: Create Azure Storage Account for Terraform State
+      run: |
+        az group create --name $RG_NAME --location $LOCATION
+        az storage account create \
+          --name $STORAGE_ACCOUNT_NAME \
+          --resource-group $RG_NAME \
+          --location $LOCATION \
+          --sku Standard_LRS \
+          --encryption-services blob
+
+        az storage container create \
+          --name $CONTAINER_NAME \
+          --account-name $STORAGE_ACCOUNT_NAME
+
+    # ------------------------------
+    # STEP 5: Setup Terraform
+    # ------------------------------
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: 1.9.5
 
-    - name: Terraform Init (with backend)
+    # ------------------------------
+    # STEP 6: Terraform Init (Dynamic Backend)
+    # ------------------------------
+    - name: Terraform Init
       env:
         ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
         ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
         ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
         ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
       run: |
-        terraform init \
-          -backend-config="resource_group_name=${{ env.RG_NAME }}" \
-          -backend-config="storage_account_name=${{ env.STORAGE_ACCOUNT_NAME }}" \
-          -backend-config="container_name=${{ env.CONTAINER_NAME }}" \
+        terraform init -reconfigure \
+          -backend-config="resource_group_name=$RG_NAME" \
+          -backend-config="storage_account_name=$STORAGE_ACCOUNT_NAME" \
+          -backend-config="container_name=$CONTAINER_NAME" \
           -backend-config="key=terraform.tfstate"
 
-    - name: Terraform Destroy
+    # ------------------------------
+    # STEP 7: Terraform Plan
+    # ------------------------------
+    - name: Terraform Plan
+      if: ${{ github.event.inputs.action == 'apply' }}
       env:
         ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
         ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
         ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
         ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-      run: terraform destroy -auto-approve -input=false
+      run: terraform plan
 
-    - name: Cleanup backend resources
-      if: always()
+    # ------------------------------
+    # STEP 8: Terraform Apply
+    # ------------------------------
+    - name: Terraform Apply
+      if: ${{ github.event.inputs.action == 'apply' }}
+      env:
+        ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
+        ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
+        ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
+        ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+      run: terraform apply -auto-approve
+
+    # ------------------------------
+    # STEP 9: Terraform Destroy
+    # ------------------------------
+    - name: Terraform Destroy
+      if: ${{ github.event.inputs.action == 'destroy' }}
+      env:
+        ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
+        ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
+        ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
+        ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
       run: |
+        terraform init -reconfigure \
+          -backend-config="resource_group_name=$RG_NAME" \
+          -backend-config="storage_account_name=$STORAGE_ACCOUNT_NAME" \
+          -backend-config="container_name=$CONTAINER_NAME" \
+          -backend-config="key=terraform.tfstate"
+
+        terraform destroy -auto-approve
