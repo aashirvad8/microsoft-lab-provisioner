@@ -25,26 +25,28 @@ jobs:
       CONTAINER_NAME: tfstate
       PREFIX: az104lab
       RG_NAME: az104lab-tfstate-rg
-      STORAGE_NAME: yourstorageaccountname   # Replace this with your real storage account name
+      STORAGE_NAME: yourstorageaccountname  # <-- Replace with your actual storage account name
+
+      # Pass SP credentials to Terraform
+      ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
+      ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
+      ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+      ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
 
     steps:
-      # 1️⃣ Checkout the repo
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2️⃣ Install Terraform CLI
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: '1.5.7'  # specify your desired version
-
-      # 3️⃣ Azure Login
       - name: Azure Login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # 4️⃣ Terraform Init (reconfigure backend)
+      - name: Setup Terraform CLI
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: '1.5.7'  # or your preferred version
+
       - name: Terraform Init
         run: |
           terraform init -reconfigure \
@@ -53,22 +55,13 @@ jobs:
             -backend-config="container_name=${CONTAINER_NAME}" \
             -backend-config="key=terraform.tfstate"
 
-      # 5️⃣ Terraform Plan & Apply or Destroy based on input
-      - name: Terraform Plan & Apply
-        if: github.event.inputs.action == 'apply'
-        run: |
-          terraform plan
-          terraform apply -auto-approve
+      - name: Terraform Plan
+        run: terraform plan
 
-      - name: Terraform Plan & Destroy
+      - name: Terraform Apply or Destroy
+        if: github.event.inputs.action == 'apply'
+        run: terraform apply -auto-approve
+
+      - name: Terraform Destroy
         if: github.event.inputs.action == 'destroy'
-        run: |
-          terraform plan -destroy
-          terraform destroy -auto-approve
-
-      # 6️⃣ Output Public IP and Resource Group (optional)
-      - name: Show outputs
-        if: github.event.inputs.action == 'apply'
-        run: |
-          terraform output vm_public_ip
-          terraform output resource_group
+        run: terraform destroy -auto-approve
