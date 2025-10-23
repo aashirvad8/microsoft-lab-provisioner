@@ -18,50 +18,37 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: Az-104-Lab
+        working-directory: Az-104-Lab  # adjust this if your Terraform files are in a different folder
 
     env:
-      LOCATION: eastus
-      CONTAINER_NAME: tfstate
-      PREFIX: az104lab
-      RG_NAME: az104lab-tfstate-rg
-      STORAGE_NAME: yourstorageaccountname  # <-- Replace with your actual storage account name
-
-      # Pass SP credentials to Terraform
-      ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
-      ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
-      ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-      ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
+      LOCATION: eastus           # your default location
+      CONTAINER_NAME: tfstate    # must match backend.tf container_name
 
     steps:
+      # 1. Checkout repo
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # 2. Azure login using Service Principal stored in GitHub Secrets
       - name: Azure Login
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Setup Terraform CLI
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: '1.5.7'  # or your preferred version
-
+      # 3. Terraform Init (uses backend.tf for backend config)
       - name: Terraform Init
-        run: |
-          terraform init -reconfigure \
-            -backend-config="resource_group_name=${RG_NAME}" \
-            -backend-config="storage_account_name=${STORAGE_NAME}" \
-            -backend-config="container_name=${CONTAINER_NAME}" \
-            -backend-config="key=terraform.tfstate"
+        run: terraform init -input=false
 
+      # 4. Terraform Plan
       - name: Terraform Plan
-        run: terraform plan
+        run: terraform plan -out=tfplan
 
-      - name: Terraform Apply or Destroy
+      # 5. Terraform Apply (only if action is 'apply')
+      - name: Terraform Apply
         if: github.event.inputs.action == 'apply'
-        run: terraform apply -auto-approve
+        run: terraform apply -input=false -auto-approve tfplan
 
+      # 6. Terraform Destroy (only if action is 'destroy')
       - name: Terraform Destroy
         if: github.event.inputs.action == 'destroy'
         run: terraform destroy -auto-approve
