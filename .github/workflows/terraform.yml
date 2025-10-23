@@ -1,139 +1,49 @@
-name: Terraform Deploy & Destroy (Az-104-Lab)
+name: Terraform Deploy
 
 on:
-  workflow_dispatch:
-    inputs:
-      action:
-        description: 'Choose Terraform action'
-        required: true
-        default: 'apply'
-        type: choice
-        options:
-          - apply
-          - destroy
+  push:
+    branches:
+      - main   # or your main branch
 
 jobs:
   terraform:
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        shell: bash
-        working-directory: Az-104-Lab  # 👈 Important: ensures Terraform runs here
-
-    env:
-      LOCATION: eastus
-      CONTAINER_NAME: tfstate
-      PREFIX: az104lab
-
     steps:
-      # ------------------------------
-      # 1️⃣ Checkout Repository
-      # ------------------------------
-      - name: Checkout Repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # ------------------------------
-      # 2️⃣ Azure Login
-      # ------------------------------
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5  # adjust if needed
+
       - name: Azure Login
-        uses: azure/login@v2
+        uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # ------------------------------
-      # 3️⃣ Generate Backend Resource Names
-      # ------------------------------
-      - name: Generate Backend Resource Names
-        id: names
-        run: |
-          RG_NAME="${{ env.PREFIX }}-tfstate-rg"
-          STORAGE_NAME="${{ env.PREFIX }}tfstate${RANDOM}"
-          echo "RG_NAME=$RG_NAME" >> $GITHUB_ENV
-          echo "STORAGE_NAME=$STORAGE_NAME" >> $GITHUB_ENV
-          echo "STORAGE_NAME=$STORAGE_NAME"
-          echo "RG_NAME=$RG_NAME"
-
-      # ------------------------------
-      # 4️⃣ Create Azure Storage for Terraform Backend
-      # ------------------------------
-      - name: Create Backend Resources
-        run: |
-          az group create --name $RG_NAME --location $LOCATION
-          az storage account create \
-            --name $STORAGE_NAME \
-            --resource-group $RG_NAME \
-            --location $LOCATION \
-            --sku Standard_LRS \
-            --encryption-services blob
-
-          az storage container create \
-            --name $CONTAINER_NAME \
-            --account-name $STORAGE_NAME
-
-      # ------------------------------
-      # 5️⃣ Setup Terraform
-      # ------------------------------
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.9.5
-
-      # ------------------------------
-      # 6️⃣ Terraform Init
-      # ------------------------------
       - name: Terraform Init
         env:
           ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
           ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
           ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
           ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-        run: |
-          terraform init -reconfigure \
-            -backend-config="resource_group_name=$RG_NAME" \
-            -backend-config="storage_account_name=$STORAGE_NAME" \
-            -backend-config="container_name=$CONTAINER_NAME" \
-            -backend-config="key=terraform.tfstate"
+        run: terraform init
 
-      # ------------------------------
-      # 7️⃣ Terraform Plan
-      # ------------------------------
       - name: Terraform Plan
-        if: ${{ github.event.inputs.action == 'apply' }}
         env:
           ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
           ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
           ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
           ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-        run: terraform plan
+        run: terraform plan -out=tfplan
 
-      # ------------------------------
-      # 8️⃣ Terraform Apply
-      # ------------------------------
       - name: Terraform Apply
-        if: ${{ github.event.inputs.action == 'apply' }}
+        if: github.ref == 'refs/heads/main'
         env:
           ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
           ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
           ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
           ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-        run: terraform apply -auto-approve
-
-      # ------------------------------
-      # 9️⃣ Terraform Destroy
-      # ------------------------------
-      - name: Terraform Destroy
-        if: ${{ github.event.inputs.action == 'destroy' }}
-        env:
-          ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
-          ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
-          ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
-          ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-        run: |
-          terraform init -reconfigure \
-            -backend-config="resource_group_name=$RG_NAME" \
-            -backend-config="storage_account_name=$STORAGE_NAME" \
-            -backend-config="container_name=$CONTAINER_NAME" \
-            -backend-config="key=terraform.tfstate"
-
-          terraform destroy -auto-approve
+        run: terraform apply -auto-approve tfplan
