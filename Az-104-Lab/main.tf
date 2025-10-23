@@ -83,7 +83,7 @@ resource "azurerm_windows_virtual_machine" "lab_vm" {
   name                  = var.vm_name
   resource_group_name   = azurerm_resource_group.lab.name
   location              = azurerm_resource_group.lab.location
-  size                  = "Standard_B2s"
+  size                  = "Standard_B1ls"
   network_interface_ids = [azurerm_network_interface.lab_nic.id]
   admin_username        = var.admin_username
   admin_password        = var.admin_password
