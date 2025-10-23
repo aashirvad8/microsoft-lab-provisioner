@@ -39,6 +39,22 @@ jobs:
         ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
       run: terraform plan
 
+    - name: Import existing Resource Group (if it exists)
+      env:
+        ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
+        ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
+        ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
+        ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
+      run: |
+        RG_NAME="azure-lab-rg"
+        RG_ID="/subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/${RG_NAME}"
+        if az group exists --name "$RG_NAME"; then
+          echo "Resource Group $RG_NAME exists, importing into Terraform state..."
+          terraform import azurerm_resource_group.lab_rg $RG_ID || true
+        else
+          echo "Resource Group $RG_NAME does not exist, Terraform will create it."
+        fi
+        
     - name: Terraform Apply
       if: github.ref == 'refs/heads/main'
       env:
