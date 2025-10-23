@@ -1,12 +1,12 @@
+
+resource "random_integer" "suffix" {
+  min = 10000
+  max = 99999
+}
+
 resource "azurerm_resource_group" "lab_rg" {
   name     = "${var.resource_group_prefix}-${random_integer.suffix.result}"
   location = var.location
-}
-
-
-variable "resource_group_prefix" {
-  description = "Prefix for resource group"
-  default     = "azure-lab-rg"
 }
 
 resource "azurerm_virtual_network" "lab_vnet" {

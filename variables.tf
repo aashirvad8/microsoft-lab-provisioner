@@ -3,11 +3,10 @@ variable "location" {
   default     = "eastus"
 }
 
-variable "resource_group_name" {
-  description = "Resource group name"
-  default     = "azure-lab-rg-${random_integer.suffix.result}"
+variable "resource_group_prefix" {
+  description = "Prefix for resource names"
+  default     = "azure-lab-rg"
 }
-
 
 
 variable "prefix" {
