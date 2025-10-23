@@ -1,16 +1,26 @@
-name: Terraform Deploy
+name: Terraform Pipeline
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Choose Terraform action"
+        required: true
+        default: "apply"
+        type: choice
+        options:
+          - apply
+          - destroy
 
 jobs:
-  deploy:
+  terraform:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repo
+    - name: Checkout
       uses: actions/checkout@v4
 
     - name: Azure Login
@@ -18,37 +28,26 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Set up Terraform
+    - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: 1.9.5
 
-    # 🌟 Bootstrap backend resources
-    - name: Create backend resources
-      id: backend
+    - name: Create dynamic backend (if apply)
+      if: github.event.inputs.action == 'apply'
       run: |
-        # Generate unique names
         RG_NAME="tfstate-rg-${{ github.run_id }}"
-        STORAGE_ACCOUNT_NAME="tfstate$(openssl rand -hex 5)"
+        STORAGE_ACCOUNT_NAME="tfstate${{ github.run_id }}"
         CONTAINER_NAME="tfstate"
 
-        echo "Creating Resource Group: $RG_NAME"
-        az group create --name $RG_NAME --location eastus
-
-        echo "Creating Storage Account: $STORAGE_ACCOUNT_NAME"
-        az storage account create --name $STORAGE_ACCOUNT_NAME --resource-group $RG_NAME --sku Standard_LRS
-
-        ACCOUNT_KEY=$(az storage account keys list --resource-group $RG_NAME --account-name $STORAGE_ACCOUNT_NAME --query "[0].value" -o tsv)
-
-        echo "Creating Blob Container: $CONTAINER_NAME"
-        az storage container create --name $CONTAINER_NAME --account-name $STORAGE_ACCOUNT_NAME --account-key $ACCOUNT_KEY
-
-        # Export for later Terraform use
         echo "RG_NAME=$RG_NAME" >> $GITHUB_ENV
         echo "STORAGE_ACCOUNT_NAME=$STORAGE_ACCOUNT_NAME" >> $GITHUB_ENV
         echo "CONTAINER_NAME=$CONTAINER_NAME" >> $GITHUB_ENV
 
-    # 🌟 Initialize Terraform backend dynamically
+        az group create --name $RG_NAME --location eastus
+        az storage account create --name $STORAGE_ACCOUNT_NAME --resource-group $RG_NAME --location eastus --sku Standard_LRS
+        az storage container create --name $CONTAINER_NAME --account-name $STORAGE_ACCOUNT_NAME
+
     - name: Terraform Init
       env:
         ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
@@ -62,19 +61,21 @@ jobs:
           -backend-config="container_name=${{ env.CONTAINER_NAME }}" \
           -backend-config="key=terraform.tfstate"
 
-    - name: Terraform Plan
+    - name: Terraform Plan or Apply/Destroy
       env:
         ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
         ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
         ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
         ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-      run: terraform plan
+      run: |
+        if [ "${{ github.event.inputs.action }}" == "destroy" ]; then
+          terraform destroy -auto-approve
+        else
+          terraform apply -auto-approve
+        fi
 
-    - name: Terraform Apply
-      if: github.ref == 'refs/heads/main'
-      env:
-        ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
-        ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
-        ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
-        ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-      run: terraform apply -auto-approve
+    - name: Cleanup backend RG (if destroy)
+      if: github.event.inputs.action == 'destroy'
+      run: |
+        echo "Deleting backend RG: ${{ env.RG_NAME }}"
+        az group delete --name ${{ env.RG_NAME }} --yes --no-wait
