@@ -1,15 +1,19 @@
 name: Terraform Destroy
 
 on:
-  workflow_dispatch:   # 👈 allows you to trigger it manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type DESTROY to confirm you want to tear everything down"
+        required: true
 
 jobs:
   destroy:
+    if: github.event.inputs.confirm == 'DESTROY'
     runs-on: ubuntu-latest
-    environment: production   # optional safety guard
 
     steps:
-    - name: Checkout repo
+    - name: Checkout
       uses: actions/checkout@v4
 
     - name: Azure Login
@@ -28,12 +32,9 @@ jobs:
         ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
         ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
         ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-      run: terraform init -input=false
+      run: terraform init
 
     - name: Terraform Destroy
       env:
         ARM_CLIENT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}
-        ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}
-        ARM_TENANT_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}
-        ARM_SUBSCRIPTION_ID: ${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}
-      run: terraform destroy -auto-approve -input=false
+        ARM_CLIENT_SECRET: ${{ fromJson(secrets.AZURE_CREDENTIALS).cl_
